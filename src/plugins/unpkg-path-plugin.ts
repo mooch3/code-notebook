@@ -1,32 +1,51 @@
-import * as esbuild from 'esbuild-wasm';
- 
+import * as esbuild from "esbuild-wasm";
+import axios from "axios";
+
 export const unpkgPathPlugin = () => {
   return {
-    name: 'unpkg-path-plugin',
+    name: "unpkg-path-plugin",
     setup(build: esbuild.PluginBuild) {
-        // figure out where index.js is stored
-        // filter controls when onLoad and onResolve functions are executed
-        // namespace can apply functions to some files that are only in namespace 'a'
+      // figure out where index.js is stored
+      // filter controls when onLoad and onResolve functions are executed
+      // namespace can apply functions to some files that are only in namespace 'a'
       build.onResolve({ filter: /.*/ }, async (args: any) => {
-        console.log('onResolve', args);
-        return { path: args.path, namespace: 'a' };
+        console.log("onResolve", args);
+        if (args.path === "index.js") {
+          return { path: args.path, namespace: "a" };
+        }
+        if (args.path.includes('./') || args.path.includes('../')) {
+            return {
+                namespace: 'a',
+                path: new URL(args.path, 'https://unpkg.com' + args.resolveDir + '/').href
+            }
+        }
+        return {
+          namespace: "a",
+          path: `https://unpkg.com/${args.path}`,
+        };
       });
-    // onLoad listener attempts to load up index.js file
-    // if you define onLoad callback inside plugin you override ESBuilds 
-    // process of trying to access the file system (which would be hard drive... which throws an error)
+      // onLoad listener attempts to load up index.js file
+      // if you define onLoad callback inside plugin you override ESBuilds
+      // process of trying to access the file system (which would be hard drive... which throws an error)
       build.onLoad({ filter: /.*/ }, async (args: any) => {
-        console.log('onLoad', args);
+        console.log("onLoad", args);
         // load object below if index.js
         // repeat resolve step to fnd where import file is
-        if (args.path === 'index.js') {
+        if (args.path === "index.js") {
           return {
-            loader: 'jsx',
+            loader: "jsx",
             contents: `
-              import message from 'tiny-test-pkg';
+              const message = require('nested-test-pkg')
               console.log(message);
             `,
           };
         }
+        const { data, request } = await axios.get(args.path);
+        return {
+          loader: "jsx",
+          contents: data,
+          resolveDir: new URL('./', request.responseURL).pathname
+        };
       });
     },
   };
